@@ -9,83 +9,67 @@ try:
     if __package__ is None or __package__ == '':
         current_dir = os.path.dirname(os.path.abspath(__file__))
         project_root = os.path.dirname(current_dir)
-        if project_root not in sys.path:
-            sys.path.insert(0, project_root)
-        if current_dir not in sys.path:
-             sys.path.insert(0, current_dir)
-except NameError:
+        if project_root not in sys.path: sys.path.insert(0, project_root)
+        if current_dir not in sys.path: sys.path.insert(0, current_dir)
+except NameError: # Fallback for older Pythons or unusual execution
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
-    if project_root not in sys.path:
-        sys.path.insert(0, project_root)
-    if current_dir not in sys.path:
-         sys.path.insert(0, current_dir)
+    if project_root not in sys.path: sys.path.insert(0, project_root)
+    if current_dir not in sys.path: sys.path.insert(0, current_dir)
 
-# Now, absolute imports from 'src' should work reliably
-from src.constants import WIDTH, HEIGHT
+from src.constants import WIDTH, HEIGHT # These are now TOTAL_WIDTH, TOTAL_HEIGHT effectively
 from src.board import Board
-import src.assets_manager # Import the module
+import src.assets_manager
 
 def run_game():
-    """Initializes Pygame, sets up the screen, loads assets, and runs the main game loop."""
-    # --- Initialization ---
     pygame.init()
     print("Pygame initialized.")
 
-    # --- Screen Setup ---
+    # Use WIDTH and HEIGHT from constants (which now include side panel)
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("The Unbeatable Chess")
-    print("Screen setup complete.")
+    print(f"Screen setup complete: {WIDTH}x{HEIGHT}")
 
-    # --- Load Assets ---
-    # CRITICAL: Load images AFTER the display has been set up.
-    src.assets_manager.load_images()
+    src.assets_manager.load_images() # Load after display mode is set
     print("Asset loading explicitly called.")
 
-    # --- Create Board Object ---
     try:
-        board = Board() # Board init will use get_piece_image, which now relies on LOADED_ASSETS
+        board = Board()
         print("Board object created.")
     except Exception as e:
         print(f"Error creating Board object: {e}")
         pygame.quit()
         sys.exit()
 
-    # --- Clock for controlling frame rate ---
     clock = pygame.time.Clock()
-
-    # --- Game Loop ---
     running = True
     print("Starting game loop...")
     while running:
-        # --- Event Handling ---
+        mouse_pos = pygame.mouse.get_pos() # Get mouse position for hover effects
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False
+                running = False # Exit signal from Board's Exit button will also trigger this
+
+            # Pass events to board's buttons for hover effects
+            board.handle_button_events(event) # For main UI buttons
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1: # Left mouse button
-                    mouse_pos = event.pos
-                    board_coords = board.get_row_col_from_mouse(mouse_pos)
-                    if board_coords:
-                        row, col = board_coords
-                        board.select_square(row, col)
-                    # else: print("Clicked outside board.")
+                    board.handle_click(mouse_pos) # Centralized click handling in Board
+
+        # --- Game Logic (already handled by board interactions) ---
 
         # --- Drawing ---
-        board.draw(screen)
-
-        # --- Update Display ---
+        board.draw(screen) # Board's draw method now handles all game elements
         pygame.display.flip()
 
         # --- Frame Rate Control ---
-        clock.tick(60)
+        clock.tick(60) # Aim for 60 FPS
 
-    # --- Quit ---
     print("Exiting game loop. Quitting Pygame.")
     pygame.quit()
     sys.exit()
 
-# --- Main Execution Guard ---
 if __name__ == '__main__':
     run_game()

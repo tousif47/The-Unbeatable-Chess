@@ -11,26 +11,29 @@ try:
         project_root = os.path.dirname(current_dir)
         if project_root not in sys.path: sys.path.insert(0, project_root)
         if current_dir not in sys.path: sys.path.insert(0, current_dir)
-except NameError: # Fallback for older Pythons or unusual execution
+except NameError: 
     current_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.dirname(current_dir)
     if project_root not in sys.path: sys.path.insert(0, project_root)
     if current_dir not in sys.path: sys.path.insert(0, current_dir)
 
-from src.constants import WIDTH, HEIGHT # These are now TOTAL_WIDTH, TOTAL_HEIGHT effectively
+from src.constants import WIDTH, HEIGHT
 from src.board import Board
-import src.assets_manager
+import src.assets_manager # Import the module
 
 def run_game():
-    pygame.init()
+    # --- Initialization ---
+    pygame.init() # Initializes all Pygame modules, including mixer by default
     print("Pygame initialized.")
 
-    # Use WIDTH and HEIGHT from constants (which now include side panel)
+    # --- Screen Setup ---
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("The Unbeatable Chess")
     print(f"Screen setup complete: {WIDTH}x{HEIGHT}")
 
+    # --- Load Assets ---
     src.assets_manager.load_images() # Load after display mode is set
+    src.assets_manager.load_sounds() # Load sounds after mixer is initialized
     print("Asset loading explicitly called.")
 
     try:
@@ -45,27 +48,21 @@ def run_game():
     running = True
     print("Starting game loop...")
     while running:
-        mouse_pos = pygame.mouse.get_pos() # Get mouse position for hover effects
+        mouse_pos = pygame.mouse.get_pos() 
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                running = False # Exit signal from Board's Exit button will also trigger this
+                running = False 
 
-            # Pass events to board's buttons for hover effects
-            board.handle_button_events(event) # For main UI buttons
+            board.handle_button_events(event) 
 
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: # Left mouse button
-                    board.handle_click(mouse_pos) # Centralized click handling in Board
-
-        # --- Game Logic (already handled by board interactions) ---
-
-        # --- Drawing ---
-        board.draw(screen) # Board's draw method now handles all game elements
+                if event.button == 1: 
+                    board.handle_click(mouse_pos) 
+        
+        board.draw(screen) 
         pygame.display.flip()
-
-        # --- Frame Rate Control ---
-        clock.tick(60) # Aim for 60 FPS
+        clock.tick(60) 
 
     print("Exiting game loop. Quitting Pygame.")
     pygame.quit()

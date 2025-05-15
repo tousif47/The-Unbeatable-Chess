@@ -19,21 +19,20 @@ except NameError:
 
 from src.constants import WIDTH, HEIGHT
 from src.board import Board
-import src.assets_manager # Import the module
+import src.assets_manager
+
+AI_MOVE_EVENT = pygame.USEREVENT + 1
 
 def run_game():
-    # --- Initialization ---
-    pygame.init() # Initializes all Pygame modules, including mixer by default
+    pygame.init()
     print("Pygame initialized.")
 
-    # --- Screen Setup ---
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
     pygame.display.set_caption("The Unbeatable Chess")
     print(f"Screen setup complete: {WIDTH}x{HEIGHT}")
 
-    # --- Load Assets ---
-    src.assets_manager.load_images() # Load after display mode is set
-    src.assets_manager.load_sounds() # Load sounds after mixer is initialized
+    src.assets_manager.load_images() 
+    src.assets_manager.load_sounds()
     print("Asset loading explicitly called.")
 
     try:
@@ -54,16 +53,28 @@ def run_game():
             if event.type == pygame.QUIT:
                 running = False 
 
-            board.handle_button_events(event) 
+            # Pass MOUSEMOTION to buttons for hover effects.
+            # Button click actions are now initiated from board.handle_button_events
+            # if it returns True for a MOUSEBUTTONDOWN event.
+            button_was_clicked_and_actioned = board.handle_button_events(event)
 
             if event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: 
-                    board.handle_click(mouse_pos) 
+                if event.button == 1: # Left mouse button
+                    if not button_was_clicked_and_actioned: # If no main UI button handled the click
+                        if not board.is_animating: 
+                            # board.handle_click_on_board_or_dialog will check confirmation dialog first, then board
+                            board.handle_click_on_board_or_dialog(mouse_pos) 
+            
+            if event.type == AI_MOVE_EVENT: 
+                if not board.is_animating: 
+                    board._trigger_ai_move()
         
+        board.update() 
         board.draw(screen) 
         pygame.display.flip()
         clock.tick(60) 
 
+    board.close_engine() 
     print("Exiting game loop. Quitting Pygame.")
     pygame.quit()
     sys.exit()

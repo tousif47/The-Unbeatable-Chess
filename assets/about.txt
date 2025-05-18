@@ -1,0 +1,9 @@
+About The Unbeatable Chess
+
+Version: 1.0 (Python Edition)
+Developed by: [Your Name/Handle]
+
+This game was created using Pygame and Python.
+The AI is powered by the Stockfish chess engine.
+
+Enjoy the game!

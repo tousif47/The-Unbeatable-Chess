@@ -51,7 +51,7 @@ class Board:
         self.pending_move = None
 
         self.stockfish_engine = None
-        self._init_stockfish_engine() # Call to the method
+        self._init_stockfish_engine() 
 
         try:
             if not pygame.font.get_init(): pygame.font.init()
@@ -78,15 +78,13 @@ class Board:
         self.show_restart_confirmation = False 
         self._update_status_message()
 
-    # ADD THIS METHOD BACK
     def _init_stockfish_engine(self):
         """Initializes the Stockfish engine if the path is valid."""
         if STOCKFISH_PATH and os.path.exists(STOCKFISH_PATH):
             try:
                 self.stockfish_engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
                 print(f"Stockfish engine initialized successfully from: {STOCKFISH_PATH}")
-                # Set initial skill level based on current_ai_difficulty
-                skill = STOCKFISH_SKILL_LEVELS.get(self.current_ai_difficulty, STOCKFISH_SKILL_LEVELS["Medium"]) # Fallback
+                skill = STOCKFISH_SKILL_LEVELS.get(self.current_ai_difficulty, STOCKFISH_SKILL_LEVELS["Medium"]) 
                 self.stockfish_engine.configure({"Skill Level": skill})
                 print(f"Stockfish initial skill level set to: {skill} ({self.current_ai_difficulty})")
             except Exception as e:
@@ -106,8 +104,10 @@ class Board:
         button_width = SIDE_PANEL_WIDTH - 40
         button_height = 40
         spacing = 15
-        current_y = 30 
-        current_y += 30 
+        
+        # Buttons at the top of the side panel
+        current_y = 30  # Initial Y for status text area
+        current_y += 30 # Space for status text, then start buttons
 
         self.restart_button = Button(panel_x, current_y, button_width, button_height,
                                      text="Restart Game", action=self._handle_restart_click)
@@ -122,24 +122,30 @@ class Board:
         self.ai_difficulty_button = Button(panel_x, current_y, button_width, button_height,
                                            text="AI Difficulty", action=self._cycle_ai_difficulty)
         self.buttons.append(self.ai_difficulty_button)
-        current_y += button_height + spacing
+        # current_y += button_height + spacing # No need to increment current_y further for top buttons
 
-        self.rules_button = Button(panel_x, current_y, button_width, button_height,
-                                   text="Game Rules", action=self._show_rules_overlay)
-        self.buttons.append(self.rules_button)
-        current_y += button_height + spacing
-        
-        self.about_button = Button(panel_x, current_y, button_width, button_height,
-                                   text="About Game", action=self._show_about_overlay)
-        self.buttons.append(self.about_button)
-
-        exit_button_y = HEIGHT - button_height - 30 
+        # Buttons at the bottom of the side panel (Rules, About, Exit)
+        # Position Exit button first from the bottom
+        exit_button_y = HEIGHT - button_height - 30 # 30px padding from bottom
         self.exit_button = Button(panel_x, exit_button_y, button_width, button_height,
                                   text="Exit Game", action=self._handle_exit_click)
-        self.buttons.append(self.exit_button) 
+        self.buttons.append(self.exit_button)
+
+        # Position About button above Exit
+        about_button_y = exit_button_y - button_height - spacing
+        self.about_button = Button(panel_x, about_button_y, button_width, button_height,
+                                   text="About Game", action=self._show_about_overlay)
+        self.buttons.append(self.about_button)
+        
+        # Position Rules button above About
+        rules_button_y = about_button_y - button_height - spacing
+        self.rules_button = Button(panel_x, rules_button_y, button_width, button_height,
+                                   text="Game Rules", action=self._show_rules_overlay)
+        self.buttons.append(self.rules_button)
 
         self._update_ai_difficulty_button_state()
 
+        # Confirmation Buttons for restart (screen relative positions)
         confirm_btn_y = BOARD_HEIGHT // 2 + 20 
         self.confirm_yes_button = Button(BOARD_WIDTH // 2 - 110, confirm_btn_y, 100, 40, "Yes",
                                          color=BUTTON_WARN_COLOR, hover_color=BUTTON_WARN_HOVER_COLOR,
@@ -148,6 +154,7 @@ class Board:
                                         color=BUTTON_COLOR, hover_color=BUTTON_HOVER_COLOR,
                                         text_color=BUTTON_TEXT_COLOR, action=self._cancel_restart_confirmation)
         
+        # Overlay Close Button (position will be set when overlay is drawn)
         self.overlay_close_button = Button(0, 0, 100, 30, "Close", action=self._close_text_overlay)
 
 
@@ -176,7 +183,7 @@ class Board:
                 elif not paragraphs and len(lines) == 1: 
                      paragraphs.append("(No additional content)")
         except FileNotFoundError:
-            print(f"Error: Text file not found: {filename}")
+            print(f"Error: Text file not found: {filepath}") # Show full path in error
             title = f"File Not Found: {filename}"
         except Exception as e:
             print(f"Error reading text file {filename}: {e}")
@@ -302,8 +309,6 @@ class Board:
         if self.is_animating: return False
 
         if self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT]:
-            # Check if overlay_close_button has screen_rect, otherwise use its default rect
-            # This assumes overlay_close_button.rect is updated to screen coords when drawn
             close_button_rect = self.overlay_close_button.screen_rect if hasattr(self.overlay_close_button, 'screen_rect') else self.overlay_close_button.rect
             if self.overlay_close_button and close_button_rect.collidepoint(pos):
                 if self.overlay_close_button.action:
@@ -646,19 +651,22 @@ class Board:
 
         close_btn_width = 100
         close_btn_height = 30
-        # Position close button on the overlay_surface
+        
+        # Position close button on the overlay_surface (local coordinates)
         self.overlay_close_button.rect.width = close_btn_width
         self.overlay_close_button.rect.height = close_btn_height
         self.overlay_close_button.rect.centerx = overlay_rect_on_screen.width // 2
         self.overlay_close_button.rect.bottom = overlay_rect_on_screen.height - 20
         
-        # Store screen_rect for click detection
+        # Store screen_rect for click detection (global coordinates)
         self.overlay_close_button.screen_rect = pygame.Rect(
             self.overlay_close_button.rect.left + overlay_rect_on_screen.left,
             self.overlay_close_button.rect.top + overlay_rect_on_screen.top,
             close_btn_width, close_btn_height
         )
-        self.overlay_close_button.draw(overlay_surface) # Draw on the local overlay surface
+        # Draw the button on the local overlay_surface using its local rect
+        self.overlay_close_button.draw(overlay_surface) 
+        
         screen.blit(overlay_surface, overlay_rect_on_screen.topleft)
 
 
@@ -672,7 +680,6 @@ class Board:
         self.draw_animated_piece(screen) 
         self.draw_side_panel(screen)     
         
-        # Draw overlays on top of game over, but game over on top of board
         self.draw_game_over_display(screen) 
         
         if self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT]:
@@ -682,35 +689,27 @@ class Board:
 
 
     def handle_button_events(self, event):
-        # This method is primarily for hover state updates for main buttons.
-        # Click actions are now mostly handled by the Button class itself or specific logic in main.py.
         if event.type == pygame.MOUSEMOTION:
             for button in self.buttons:
-                button.handle_event(event) # Updates is_hovered for main buttons
-
-            # Hover for overlay close button
+                button.handle_event(event) 
             if self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT] and self.overlay_close_button:
                 if hasattr(self.overlay_close_button, 'screen_rect'):
                     self.overlay_close_button.is_hovered = self.overlay_close_button.screen_rect.collidepoint(event.pos)
-                else: # Fallback if screen_rect not set (should be set during draw)
+                else: 
                     self.overlay_close_button.is_hovered = self.overlay_close_button.rect.collidepoint(event.pos)
-            
-            # Hover for restart confirmation buttons
             if self.show_restart_confirmation:
                 self.confirm_yes_button.is_hovered = self.confirm_yes_button.rect.collidepoint(event.pos)
                 self.confirm_no_button.is_hovered = self.confirm_no_button.rect.collidepoint(event.pos)
-            return False # MOUSEMOTION doesn't "consume" a click in the context of main loop
-
+            return False 
+        
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            # Check main UI buttons first
             for button in self.buttons:
-                # The Button's handle_event will call the action if clicked
                 if button.handle_event(event): 
-                    return True # Click was handled by a main UI button
+                    return True 
             
-            # If an overlay is active, its close button click is handled in handle_click_on_board_or_dialog
-            # If restart confirmation is active, its buttons are handled in handle_click_on_board_or_dialog
-            # This method now primarily signals if a main UI button was clicked.
+            # Click handling for overlay close button and restart confirmation buttons
+            # is now inside handle_click_on_board_or_dialog, which is called
+            # from main.py if handle_button_events returns False.
             
         return False 
 

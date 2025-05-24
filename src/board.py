@@ -7,7 +7,7 @@ import time
 import os 
 from src.constants import (ROWS, COLS, SQUARE_SIZE, BOARD_WIDTH, BOARD_HEIGHT, SIDE_PANEL_WIDTH,
                            WIDTH, HEIGHT,
-                           LIGHT_SQUARE, DARK_SQUARE, HIGHLIGHT_COLOR, GREEN, BLACK,
+                           LIGHT_SQUARE, DARK_SQUARE, HIGHLIGHT_COLOR, GREEN, BLACK, CHECK_HIGHLIGHT_COLOR,
                            SIDE_PANEL_BG_COLOR, TEXT_COLOR, OVERLAY_TEXT_COLOR, GAME_OVER_BG_COLOR, TEXT_OVERLAY_BG_COLOR,
                            BUTTON_COLOR, BUTTON_HOVER_COLOR, BUTTON_TEXT_COLOR,
                            BUTTON_DISABLED_COLOR, BUTTON_DISABLED_TEXT_COLOR,
@@ -18,11 +18,14 @@ from src.constants import (ROWS, COLS, SQUARE_SIZE, BOARD_WIDTH, BOARD_HEIGHT, S
                            DEFAULT_GAME_MODE, DEFAULT_AI_DIFFICULTY,
                            ANIMATION_SPEED, STOCKFISH_PATH,
                            RULES_FILENAME, ABOUT_FILENAME, TEXT_FILE_PATH, 
-                           OVERLAY_NONE, OVERLAY_RULES, OVERLAY_ABOUT, OVERLAY_RESTART_CONFIRM) 
+                           OVERLAY_NONE, OVERLAY_RULES, OVERLAY_ABOUT)
 from src.assets_manager import get_piece_image, play_sound
 from src.ui_elements import Button
 import chess
 import chess.engine
+
+AI_MOVE_EVENT = pygame.USEREVENT + 1
+
 
 class Board:
     def __init__(self):
@@ -36,6 +39,7 @@ class Board:
         self.game_over = False
         self.game_over_message = ""
         self.status_message = ""
+        self.king_in_check_coords = None 
 
         self.game_mode = DEFAULT_GAME_MODE
         self.ai_difficulty_index = AI_DIFFICULTIES.index(DEFAULT_AI_DIFFICULTY)
@@ -51,6 +55,7 @@ class Board:
         self.pending_move = None
 
         self.stockfish_engine = None
+        self.ai_is_thinking = False 
         self._init_stockfish_engine() 
 
         try:
@@ -79,7 +84,6 @@ class Board:
         self._update_status_message()
 
     def _init_stockfish_engine(self):
-        """Initializes the Stockfish engine if the path is valid."""
         if STOCKFISH_PATH and os.path.exists(STOCKFISH_PATH):
             try:
                 self.stockfish_engine = chess.engine.SimpleEngine.popen_uci(STOCKFISH_PATH)
@@ -97,7 +101,6 @@ class Board:
                  print("STOCKFISH_PATH not configured. AI will not be available.")
             self.stockfish_engine = None
 
-
     def _setup_buttons(self):
         self.buttons = []
         panel_x = BOARD_WIDTH + 20
@@ -105,9 +108,8 @@ class Board:
         button_height = 40
         spacing = 15
         
-        # Buttons at the top of the side panel
-        current_y = 30  # Initial Y for status text area
-        current_y += 30 # Space for status text, then start buttons
+        current_y = 30 
+        current_y += 30 
 
         self.restart_button = Button(panel_x, current_y, button_width, button_height,
                                      text="Restart Game", action=self._handle_restart_click)
@@ -122,30 +124,25 @@ class Board:
         self.ai_difficulty_button = Button(panel_x, current_y, button_width, button_height,
                                            text="AI Difficulty", action=self._cycle_ai_difficulty)
         self.buttons.append(self.ai_difficulty_button)
-        # current_y += button_height + spacing # No need to increment current_y further for top buttons
-
-        # Buttons at the bottom of the side panel (Rules, About, Exit)
-        # Position Exit button first from the bottom
-        exit_button_y = HEIGHT - button_height - 30 # 30px padding from bottom
-        self.exit_button = Button(panel_x, exit_button_y, button_width, button_height,
-                                  text="Exit Game", action=self._handle_exit_click)
-        self.buttons.append(self.exit_button)
-
-        # Position About button above Exit
-        about_button_y = exit_button_y - button_height - spacing
-        self.about_button = Button(panel_x, about_button_y, button_width, button_height,
-                                   text="About Game", action=self._show_about_overlay)
-        self.buttons.append(self.about_button)
         
-        # Position Rules button above About
+        exit_button_y = HEIGHT - button_height - 30 
+        about_button_y = exit_button_y - button_height - spacing
         rules_button_y = about_button_y - button_height - spacing
+
         self.rules_button = Button(panel_x, rules_button_y, button_width, button_height,
                                    text="Game Rules", action=self._show_rules_overlay)
         self.buttons.append(self.rules_button)
+        
+        self.about_button = Button(panel_x, about_button_y, button_width, button_height,
+                                   text="About Game", action=self._show_about_overlay)
+        self.buttons.append(self.about_button)
+
+        self.exit_button = Button(panel_x, exit_button_y, button_width, button_height,
+                                  text="Exit Game", action=self._handle_exit_click)
+        self.buttons.append(self.exit_button) 
 
         self._update_ai_difficulty_button_state()
 
-        # Confirmation Buttons for restart (screen relative positions)
         confirm_btn_y = BOARD_HEIGHT // 2 + 20 
         self.confirm_yes_button = Button(BOARD_WIDTH // 2 - 110, confirm_btn_y, 100, 40, "Yes",
                                          color=BUTTON_WARN_COLOR, hover_color=BUTTON_WARN_HOVER_COLOR,
@@ -154,9 +151,7 @@ class Board:
                                         color=BUTTON_COLOR, hover_color=BUTTON_HOVER_COLOR,
                                         text_color=BUTTON_TEXT_COLOR, action=self._cancel_restart_confirmation)
         
-        # Overlay Close Button (position will be set when overlay is drawn)
         self.overlay_close_button = Button(0, 0, 100, 30, "Close", action=self._close_text_overlay)
-
 
     def _load_text_file_content(self, filename):
         title = "Error"
@@ -183,7 +178,7 @@ class Board:
                 elif not paragraphs and len(lines) == 1: 
                      paragraphs.append("(No additional content)")
         except FileNotFoundError:
-            print(f"Error: Text file not found: {filepath}") # Show full path in error
+            print(f"Error: Text file not found: {filepath}") 
             title = f"File Not Found: {filename}"
         except Exception as e:
             print(f"Error reading text file {filename}: {e}")
@@ -219,8 +214,11 @@ class Board:
             self.game_mode = MODE_PVA
             if not self.stockfish_engine: 
                 self._init_stockfish_engine()
-        else:
+        else: # Switching from PVA to PVP
             self.game_mode = MODE_PVP
+            pygame.time.set_timer(AI_MOVE_EVENT, 0) 
+            self.ai_is_thinking = False 
+
         self.game_mode_button.update_text(f"Mode: {self.game_mode}")
         self._update_ai_difficulty_button_state()
         self.restart_game() 
@@ -277,10 +275,17 @@ class Board:
         self.active_overlay_type = OVERLAY_NONE 
         self.is_animating = False 
         self.animating_piece_surface = None
+        self.king_in_check_coords = None 
+        self.ai_is_thinking = False 
+        pygame.time.set_timer(AI_MOVE_EVENT, 0) 
         self._update_status_message()
         print("Game restarted.")
         if self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK and not self.is_animating and not self.game_over:
-            pygame.time.set_timer(pygame.USEREVENT + 1, 500) 
+            # AI's turn on a fresh PvA game (if Black starts, though standard chess White starts)
+            # Set thinking flag and update message before setting timer
+            self.ai_is_thinking = True
+            self._update_status_message()
+            pygame.time.set_timer(AI_MOVE_EVENT, 500) 
 
     def _sync_visual_board(self):
         for r in range(ROWS):
@@ -306,7 +311,8 @@ class Board:
 
 
     def handle_click_on_board_or_dialog(self, pos):
-        if self.is_animating: return False
+        if self.is_animating or (self.game_mode == MODE_PVA and self.ai_is_thinking): 
+            return False 
 
         if self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT]:
             close_button_rect = self.overlay_close_button.screen_rect if hasattr(self.overlay_close_button, 'screen_rect') else self.overlay_close_button.rect
@@ -332,7 +338,7 @@ class Board:
         return False 
 
     def select_square(self, row, col):
-        if self.game_over or self.is_animating: return
+        if self.game_over or self.is_animating or self.ai_is_thinking: return
         if self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK: 
             return
 
@@ -410,18 +416,30 @@ class Board:
         
         self.selected_square_coords = None 
         self.valid_moves_coords = []
+
     def _trigger_ai_move(self):
-        if self.game_over or self.is_animating or not self.stockfish_engine:
+        if self.game_mode != MODE_PVA:
+            self.ai_is_thinking = False 
             self._update_status_message() 
             return
+
+        if self.game_over or self.is_animating or not self.stockfish_engine:
+            self.ai_is_thinking = False 
+            self._update_status_message() 
+            return
+        
         if self.chess_board.turn == chess.BLACK: 
-            print(f"AI ({self.current_ai_difficulty}) is thinking...")
+            # self.ai_is_thinking = True # This is now set when AI_MOVE_EVENT timer is set or in _update_animation
+            # self._update_status_message() # Already called to show "thinking"
+
+            print(f"AI ({self.current_ai_difficulty}) is actually processing move...")
             
             skill = STOCKFISH_SKILL_LEVELS.get(self.current_ai_difficulty, STOCKFISH_SKILL_LEVELS["Medium"]) 
             try:
                 self.stockfish_engine.configure({"Skill Level": skill})
             except Exception as e: 
                 print(f"Error configuring Stockfish for AI move: {e}")
+                self.ai_is_thinking = False
                 self._update_status_message() 
                 return
 
@@ -433,22 +451,31 @@ class Board:
             try:
                 result = self.stockfish_engine.play(self.chess_board, chess.engine.Limit(time=think_time))
                 ai_chess_move = result.move
+                # self.ai_is_thinking = False # Moved to after animation completion
                 if ai_chess_move:
                     print(f"AI plays: {ai_chess_move.uci()}")
                     from_coords = self._chess_sq_to_coords(ai_chess_move.from_square)
                     to_coords = self._chess_sq_to_coords(ai_chess_move.to_square)
                     if from_coords and to_coords:
-                        self.move_piece(from_coords, to_coords, is_ai_move=True)
-                else:
-                    print("AI returned no move.")
+                        self.move_piece(from_coords, to_coords, is_ai_move=True) 
+                        # ai_is_thinking will be set to False in _update_animation after AI's move animation
+                else: 
+                    print("AI returned no move (unexpected).")
+                    self.ai_is_thinking = False # Reset if no move
                     self._update_status_message() 
             except chess.engine.EngineTerminatedError:
                 print("Stockfish engine terminated unexpectedly during AI move.")
                 self.stockfish_engine = None 
+                self.ai_is_thinking = False
                 self._update_status_message()
             except Exception as e:
                 print(f"Error during AI move processing: {e}")
+                self.ai_is_thinking = False
                 self._update_status_message()
+        else: 
+            self.ai_is_thinking = False
+
+
     def _update_animation(self):
         if not self.is_animating:
             return
@@ -464,6 +491,8 @@ class Board:
             self.is_animating = False 
 
             if hasattr(self, 'pending_move') and self.pending_move:
+                is_ai_making_move = (self.game_mode == MODE_PVA and self.chess_board.piece_at(self.pending_move.from_square).color == chess.BLACK)
+                
                 if self.pending_move in self.chess_board.legal_moves or self.chess_board.is_capture(self.pending_move): 
                     self.chess_board.push(self.pending_move)
                 else: 
@@ -475,15 +504,24 @@ class Board:
             self.anim_original_start_coords = None
             self.anim_target_coords = None
             
+            # If an AI move just finished animating, AI is no longer thinking
+            if self.game_mode == MODE_PVA and self.chess_board.turn == chess.WHITE: # Turn has flipped to White
+                self.ai_is_thinking = False
+
             self._update_status_message() 
             self._check_game_over()     
 
+            # If player's move just finished, and it's now AI's turn
             if not self.game_over and self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK:
-                pygame.time.set_timer(pygame.USEREVENT + 1, 500) 
+                self.ai_is_thinking = True # Set thinking before timer
+                self._update_status_message() # Show "AI is thinking..."
+                pygame.time.set_timer(AI_MOVE_EVENT, 500) # Trigger AI to actually think
         else: 
             self.anim_current_pixel_pos[0] += (dx / distance) * ANIMATION_SPEED
             self.anim_current_pixel_pos[1] += (dy / distance) * ANIMATION_SPEED
+
     def _update_status_message(self):
+        self.king_in_check_coords = None 
         if self.game_over: 
             self.status_message = "" 
             return
@@ -492,18 +530,34 @@ class Board:
         if self.game_mode == MODE_PVP:
             player_turn_text = "White's Turn" if self.chess_board.turn == chess.WHITE else "Black's Turn"
         elif self.game_mode == MODE_PVA:
-            if self.chess_board.turn == chess.BLACK and not self.is_animating and not self.game_over : 
+            if self.chess_board.turn == chess.BLACK and self.ai_is_thinking: 
                  player_turn_text = f"AI ({self.current_ai_difficulty}) is thinking..."
-            else:
-                player_turn_text = "Your Turn (White)" if self.chess_board.turn == chess.WHITE else "AI's Turn (Black)"
+            elif self.chess_board.turn == chess.BLACK and not self.is_animating: # AI's turn, but not actively thinking yet
+                 player_turn_text = f"AI's Turn ({self.current_ai_difficulty})"
+            else: # Player's turn (White)
+                player_turn_text = "Your Turn (White)"
         
-        self.status_message = f"{player_turn_text}{' - CHECK!' if self.chess_board.is_check() else ''}"
+        self.status_message = player_turn_text
+        if self.chess_board.is_check():
+            if self.status_message:
+                self.status_message += " - CHECK!"
+            else: # Should only happen if AI's turn and not thinking, but check is on AI
+                self.status_message = "CHECK!"
+
+
+        if self.chess_board.is_check(): 
+            king_square = self.chess_board.king(self.chess_board.turn) 
+            if king_square is not None:
+                self.king_in_check_coords = self._chess_sq_to_coords(king_square)
+
     def _check_game_over(self):
         if self.game_over: return 
 
         outcome = self.chess_board.outcome()
         if outcome:
             self.game_over = True
+            self.ai_is_thinking = False # Stop AI thinking if game ends
+            self.king_in_check_coords = None 
             if outcome.termination == chess.Termination.CHECKMATE:
                 winner_color = "White" if outcome.winner == chess.WHITE else "Black"
                 if self.game_mode == MODE_PVA:
@@ -529,6 +583,12 @@ class Board:
                 color = LIGHT_SQUARE if (r_idx + c_idx) % 2 == 0 else DARK_SQUARE
                 pygame.draw.rect(screen, color, (c_idx * SQUARE_SIZE, r_idx * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE))
         
+        if self.king_in_check_coords and not self.game_over:
+            r, c = self.king_in_check_coords
+            check_surface = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
+            check_surface.fill(CHECK_HIGHLIGHT_COLOR)
+            screen.blit(check_surface, (c * SQUARE_SIZE, r * SQUARE_SIZE))
+
         for r_idx in range(ROWS):
             for c_idx in range(COLS):
                 if self.is_animating and self.anim_original_start_coords == (r_idx, c_idx):
@@ -542,7 +602,7 @@ class Board:
                                                           r_idx * SQUARE_SIZE + SQUARE_SIZE // 2))
                         screen.blit(image, img_rect.topleft)
         
-        if not self.is_animating:
+        if not self.is_animating and not (self.game_mode == MODE_PVA and self.ai_is_thinking): 
             if self.selected_square_coords:
                 r, c = self.selected_square_coords
                 highlight_surface = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
@@ -652,19 +712,16 @@ class Board:
         close_btn_width = 100
         close_btn_height = 30
         
-        # Position close button on the overlay_surface (local coordinates)
         self.overlay_close_button.rect.width = close_btn_width
         self.overlay_close_button.rect.height = close_btn_height
         self.overlay_close_button.rect.centerx = overlay_rect_on_screen.width // 2
         self.overlay_close_button.rect.bottom = overlay_rect_on_screen.height - 20
         
-        # Store screen_rect for click detection (global coordinates)
         self.overlay_close_button.screen_rect = pygame.Rect(
             self.overlay_close_button.rect.left + overlay_rect_on_screen.left,
             self.overlay_close_button.rect.top + overlay_rect_on_screen.top,
             close_btn_width, close_btn_height
         )
-        # Draw the button on the local overlay_surface using its local rect
         self.overlay_close_button.draw(overlay_surface) 
         
         screen.blit(overlay_surface, overlay_rect_on_screen.topleft)
@@ -673,6 +730,12 @@ class Board:
     def update(self):
         if not self.game_over : 
             self._update_animation()
+            # Status message is updated more strategically now, e.g., after animation or when AI starts thinking.
+            # A general call here might cause flickering or premature updates.
+            # if self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK and \
+            #    not self.is_animating and self.ai_is_thinking:
+            #     self._update_status_message()
+
 
     def draw(self, screen):
         screen.fill(SIDE_PANEL_BG_COLOR) 
@@ -706,11 +769,6 @@ class Board:
             for button in self.buttons:
                 if button.handle_event(event): 
                     return True 
-            
-            # Click handling for overlay close button and restart confirmation buttons
-            # is now inside handle_click_on_board_or_dialog, which is called
-            # from main.py if handle_button_events returns False.
-            
         return False 
 
     def close_engine(self):

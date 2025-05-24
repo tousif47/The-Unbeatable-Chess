@@ -20,12 +20,14 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 LIGHT_SQUARE = (240, 217, 181)
 DARK_SQUARE = (181, 136, 99)
-HIGHLIGHT_COLOR = (100, 255, 100, 150)
+HIGHLIGHT_COLOR = (100, 255, 100, 150) # For selected square
+CHECK_HIGHLIGHT_COLOR = (255, 50, 50, 150) # RGBA for king in check (translucent red)
+
 SIDE_PANEL_BG_COLOR = (50, 50, 50)
-TEXT_COLOR = (230, 230, 230) # General text
-OVERLAY_TEXT_COLOR = (240, 240, 240) # Slightly brighter for overlays
+TEXT_COLOR = (230, 230, 230) 
+OVERLAY_TEXT_COLOR = (240, 240, 240) 
 GAME_OVER_BG_COLOR = (40, 40, 40, 220)
-TEXT_OVERLAY_BG_COLOR = (30, 30, 30, 230) # For Rules/About overlay
+TEXT_OVERLAY_BG_COLOR = (30, 30, 30, 230) 
 
 BUTTON_COLOR = (70, 70, 90)
 BUTTON_HOVER_COLOR = (100, 100, 120)
@@ -52,7 +54,7 @@ GAME_OVER_FONT_SIZE = 48
 CONFIRM_MSG_FONT_SIZE = 24
 OVERLAY_TITLE_FONT_SIZE = 36
 OVERLAY_BODY_FONT_SIZE = 18
-OVERLAY_LINE_SPACING = 5 # Pixels between lines of body text
+OVERLAY_LINE_SPACING = 5 
 
 # --- Game Modes & AI ---
 MODE_PVP = "Player vs Player"
@@ -63,7 +65,7 @@ STOCKFISH_SKILL_LEVELS = {
     "Easiest": 0, "Easy": 3, "Medium": 7, "Hard": 12, "Unbeatable": 20
 }
 DEFAULT_GAME_MODE = MODE_PVP
-DEFAULT_AI_DIFFICULTY = AI_DIFFICULTIES[0] # Changed to "Easiest"
+DEFAULT_AI_DIFFICULTY = AI_DIFFICULTIES[0] # Easiest
 
 # --- Animation Settings ---
 ANIMATION_SPEED = 30
@@ -72,17 +74,17 @@ ANIMATION_SPEED = 30
 ASSET_PATH = os.path.join(os.path.dirname(__file__), '..', 'assets')
 IMAGE_PATH = os.path.join(ASSET_PATH, 'images', 'pieces')
 SOUND_PATH = os.path.join(ASSET_PATH, 'sounds')
-TEXT_FILE_PATH = ASSET_PATH # Store rules.txt and about.txt directly in assets for simplicity
+TEXT_FILE_PATH = ASSET_PATH 
 
 # --- Text File Names ---
 RULES_FILENAME = "rules.txt"
 ABOUT_FILENAME = "about.txt"
 
-# --- Overlay Types (for managing which overlay is active) ---
+# --- Overlay Types ---
 OVERLAY_NONE = 0
 OVERLAY_RULES = 1
 OVERLAY_ABOUT = 2
-OVERLAY_RESTART_CONFIRM = 3 # Using the existing show_restart_confirmation flag for this
+# OVERLAY_RESTART_CONFIRM (Handled by show_restart_confirmation flag)
 
 PIECE_IMAGES = {
     'wP': 'wP.png', 'wR': 'wR.png', 'wN': 'wN.png', 'wB': 'wB.png', 'wQ': 'wQ.png', 'wK': 'wK.png',
@@ -94,6 +96,7 @@ SOUND_FILES = {
     'piece_select': 'select.wav',
     'piece_deselect': 'deselect.wav',
     'piece_move': 'move.wav',
+    # Consider adding 'check.wav', 'game_over.wav' later
 }
 
 # --- Stockfish Engine Path ---

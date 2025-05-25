@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "unbeatable_chess"
+version = "0.1.0" # You can update this as you release new versions
+authors = [
+  { name="Your Name/Handle", email="your_email@example.com" }, # Replace with your details
+]
+description = "A 2D chess game with human vs. human and AI opponent modes, built with Pygame and Python-Chess."
+readme = "README.md"
+requires-python = ">=3.8" # Specify a reasonable minimum Python version
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License", # Or your chosen license
+    "Operating System :: OS Independent",
+    "Topic :: Games/Entertainment :: Board Games",
+    "Development Status :: 4 - Beta", # Or 3 - Alpha, 5 - Production/Stable
+]
+dependencies = [
+    "pygame>=2.5.0",    # Specify versions you've tested with
+    "python-chess>=1.9.0", # Specify versions
+]
+
+[project.urls]
+"Homepage" = "https://github.com/your_username/the-unbeatable-chess" # Replace with your repo URL
+"Bug Tracker" = "https://github.com/your_username/the-unbeatable-chess/issues" # Replace
+
+[project.scripts]
+# This would allow running the game using 'unbeatable-chess' command if installed via pip
+# For our executable, this isn't strictly necessary but good practice for package structure.
+# The main entry point is src/main.py, run as a module.
+# unbeatable-chess = "src.main:run_game" # If main.py had a run_game function directly callable
+
+# For running with `python -m src.main`, no script entry is needed here.
+# If you wanted to make it installable and runnable as a command,
+# you might need to adjust your src/main.py to have a clear entry function
+# or use a wrapper script. For now, we'll focus on PyInstaller.
+
+# Example for PyInstaller (not part of pyproject.toml directly, but related):
+# To build with PyInstaller, you'd typically run a command like:
+# pyinstaller --name "TheUnbeatableChess" --onefile --windowed --add-data "assets:assets" src/main.py
+# The --add-data flag is crucial for including your assets folder.

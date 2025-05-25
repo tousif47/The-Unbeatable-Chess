@@ -20,14 +20,15 @@ GREEN = (0, 255, 0)
 RED = (255, 0, 0)
 LIGHT_SQUARE = (240, 217, 181)
 DARK_SQUARE = (181, 136, 99)
-HIGHLIGHT_COLOR = (100, 255, 100, 150) # For selected square
-CHECK_HIGHLIGHT_COLOR = (255, 50, 50, 150) # RGBA for king in check (translucent red)
+HIGHLIGHT_COLOR = (100, 255, 100, 150) 
+CHECK_HIGHLIGHT_COLOR = (255, 50, 50, 150) 
 
 SIDE_PANEL_BG_COLOR = (50, 50, 50)
 TEXT_COLOR = (230, 230, 230) 
 OVERLAY_TEXT_COLOR = (240, 240, 240) 
 GAME_OVER_BG_COLOR = (40, 40, 40, 220)
 TEXT_OVERLAY_BG_COLOR = (30, 30, 30, 230) 
+PROMOTION_OVERLAY_BG_COLOR = (60, 60, 80, 235) # Slightly different for promotion
 
 BUTTON_COLOR = (70, 70, 90)
 BUTTON_HOVER_COLOR = (100, 100, 120)
@@ -55,6 +56,9 @@ CONFIRM_MSG_FONT_SIZE = 24
 OVERLAY_TITLE_FONT_SIZE = 36
 OVERLAY_BODY_FONT_SIZE = 18
 OVERLAY_LINE_SPACING = 5 
+PROMOTION_CHOICE_FONT_SIZE = 20
+PROMOTION_BUTTON_WIDTH = 120 # Width for Q, R, B, N buttons
+PROMOTION_BUTTON_HEIGHT = 50
 
 # --- Game Modes & AI ---
 MODE_PVP = "Player vs Player"
@@ -85,6 +89,8 @@ OVERLAY_NONE = 0
 OVERLAY_RULES = 1
 OVERLAY_ABOUT = 2
 # OVERLAY_RESTART_CONFIRM (Handled by show_restart_confirmation flag)
+# OVERLAY_PROMOTION (Handled by is_awaiting_promotion flag)
+
 
 PIECE_IMAGES = {
     'wP': 'wP.png', 'wR': 'wR.png', 'wN': 'wN.png', 'wB': 'wB.png', 'wQ': 'wQ.png', 'wK': 'wK.png',
@@ -96,7 +102,6 @@ SOUND_FILES = {
     'piece_select': 'select.wav',
     'piece_deselect': 'deselect.wav',
     'piece_move': 'move.wav',
-    # Consider adding 'check.wav', 'game_over.wav' later
 }
 
 # --- Stockfish Engine Path ---

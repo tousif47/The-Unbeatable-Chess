@@ -7,20 +7,23 @@ import time
 import os 
 from src.constants import (ROWS, COLS, SQUARE_SIZE, BOARD_WIDTH, BOARD_HEIGHT, SIDE_PANEL_WIDTH,
                            WIDTH, HEIGHT,
-                           LIGHT_SQUARE, DARK_SQUARE, HIGHLIGHT_COLOR, GREEN, BLACK, CHECK_HIGHLIGHT_COLOR,
+                           LIGHT_SQUARE, DARK_SQUARE, SELECTED_SQUARE_HIGHLIGHT_COLOR, 
+                           VALID_MOVE_DOT_COLOR, 
+                           BLACK, CHECK_HIGHLIGHT_COLOR, 
                            SIDE_PANEL_BG_COLOR, TEXT_COLOR, OVERLAY_TEXT_COLOR, GAME_OVER_BG_COLOR, TEXT_OVERLAY_BG_COLOR,
-                           PROMOTION_OVERLAY_BG_COLOR, # New
+                           PROMOTION_OVERLAY_BG_COLOR, AI_CONFIRM_OVERLAY_BG_COLOR, 
                            BUTTON_COLOR, BUTTON_HOVER_COLOR, BUTTON_TEXT_COLOR,
                            BUTTON_DISABLED_COLOR, BUTTON_DISABLED_TEXT_COLOR,
                            BUTTON_WARN_COLOR, BUTTON_WARN_HOVER_COLOR,
+                           BUTTON_PLAY_COLOR, BUTTON_PLAY_HOVER_COLOR, 
                            FONT_NAME, STATUS_FONT_SIZE, BUTTON_FONT_SIZE, GAME_OVER_FONT_SIZE, CONFIRM_MSG_FONT_SIZE,
                            OVERLAY_TITLE_FONT_SIZE, OVERLAY_BODY_FONT_SIZE, OVERLAY_LINE_SPACING,
-                           PROMOTION_CHOICE_FONT_SIZE, PROMOTION_BUTTON_WIDTH, PROMOTION_BUTTON_HEIGHT, # New
+                           PROMOTION_CHOICE_FONT_SIZE, PROMOTION_BUTTON_WIDTH, PROMOTION_BUTTON_HEIGHT, 
                            MODE_PVP, MODE_PVA, AI_DIFFICULTIES, STOCKFISH_SKILL_LEVELS,
-                           DEFAULT_GAME_MODE, DEFAULT_AI_DIFFICULTY,
+                           DEFAULT_GAME_MODE, DEFAULT_AI_DIFFICULTY, PLAYER_PLAYS_AS_WHITE,
                            ANIMATION_SPEED, STOCKFISH_PATH,
                            RULES_FILENAME, ABOUT_FILENAME, TEXT_FILE_PATH, 
-                           OVERLAY_NONE, OVERLAY_RULES, OVERLAY_ABOUT)
+                           OVERLAY_NONE, OVERLAY_RULES, OVERLAY_ABOUT, OVERLAY_AI_CONFIRM) 
 from src.assets_manager import get_piece_image, play_sound
 from src.ui_elements import Button
 import chess
@@ -31,6 +34,7 @@ AI_MOVE_EVENT = pygame.USEREVENT + 1
 
 class Board:
     def __init__(self):
+        # ... (most __init__ variables remain the same) ...
         self.chess_board = chess.Board()
         self.visual_board = [[None for _ in range(COLS)] for _ in range(ROWS)]
         self._sync_visual_board()
@@ -46,27 +50,30 @@ class Board:
         self.game_mode = DEFAULT_GAME_MODE
         self.ai_difficulty_index = AI_DIFFICULTIES.index(DEFAULT_AI_DIFFICULTY)
         self.current_ai_difficulty = AI_DIFFICULTIES[self.ai_difficulty_index]
+        
+        self.player_is_white = PLAYER_PLAYS_AS_WHITE 
 
-        # --- Animation State ---
         self.is_animating = False
         self.animating_piece_surface = None
         self.anim_start_pixel_pos = None
         self.anim_end_pixel_pos = None
         self.anim_current_pixel_pos = None
-        self.pending_move = None # Stores the chess.Move object during animation
+        self.anim_piece_to_draw_after_anim = None
+        self.anim_target_coords = None
+        self.pending_move = None
 
-        # --- Pawn Promotion State ---
         self.is_awaiting_promotion = False
-        self.promotion_square_coords = None # (row, col) where pawn landed
-        self.promotion_pending_base_move_uci = None # UCI string of move e.g. "e7e8"
-        self.promotion_buttons = [] # Buttons for Q, R, B, N
-        self.promoting_pawn_color_is_white = True # To get correct piece images for buttons
+        self.promotion_square_coords = None
+        self.promotion_pending_base_move_uci = None
+        self.promotion_buttons = []
+        self.promoting_pawn_color_is_white = True
 
         self.stockfish_engine = None
         self.ai_is_thinking = False 
         self._init_stockfish_engine() 
 
         try:
+            # ... (font initializations) ...
             if not pygame.font.get_init(): pygame.font.init()
             self.status_font = pygame.font.SysFont(FONT_NAME, STATUS_FONT_SIZE)
             self.game_over_font = pygame.font.SysFont(FONT_NAME, GAME_OVER_FONT_SIZE)
@@ -76,7 +83,6 @@ class Board:
             self.promotion_font = pygame.font.SysFont(FONT_NAME, PROMOTION_CHOICE_FONT_SIZE, bold=True)
         except Exception as e:
             print(f"Error initializing fonts: {e}. Using default font.")
-            # ... (font fallbacks remain the same) ...
             self.status_font = pygame.font.Font(None, STATUS_FONT_SIZE)
             self.game_over_font = pygame.font.Font(None, GAME_OVER_FONT_SIZE)
             self.confirm_font = pygame.font.Font(None, CONFIRM_MSG_FONT_SIZE)
@@ -85,18 +91,17 @@ class Board:
             self.promotion_font = pygame.font.Font(None, PROMOTION_CHOICE_FONT_SIZE)
 
 
-        self.buttons = [] # Main side panel buttons
+        self.buttons = []
         self.active_overlay_type = OVERLAY_NONE 
-        self.overlay_title_text = ""
-        self.overlay_body_paragraphs = []
+        self.overlay_title_text = "" 
+        self.overlay_body_paragraphs = [] 
         self.overlay_close_button = None 
+        self.ai_confirm_start_button = None 
 
         self._setup_buttons() 
         self.show_restart_confirmation = False 
         self._update_status_message()
 
-    # ... (_init_stockfish_engine, _setup_buttons (main ones), _load_text_file_content, _show_rules_overlay, _show_about_overlay, _close_text_overlay, _toggle_game_mode, _cycle_ai_difficulty, _update_ai_difficulty_button_state, _handle_restart_click, _handle_exit_click, _cancel_restart_confirmation) ...
-    # These methods are largely unchanged from chess_board_v16_ai_bug_fixes, ensure they are present.
     def _init_stockfish_engine(self):
         if STOCKFISH_PATH and os.path.exists(STOCKFISH_PATH):
             try:
@@ -135,9 +140,21 @@ class Board:
         self.buttons.append(self.game_mode_button)
         current_y += button_height + spacing
 
+        player_color_text = "Play as: White" if self.player_is_white else "Play as: Black"
+        self.player_color_button = Button(panel_x, current_y, button_width, button_height,
+                                           text=player_color_text, action=self._toggle_player_color)
+        self.buttons.append(self.player_color_button)
+        current_y += button_height + spacing
+        
         self.ai_difficulty_button = Button(panel_x, current_y, button_width, button_height,
                                            text="AI Difficulty", action=self._cycle_ai_difficulty)
         self.buttons.append(self.ai_difficulty_button)
+        current_y += button_height + spacing
+
+        # ADDED _handle_undo_click as action
+        self.undo_button = Button(panel_x, current_y, button_width, button_height,
+                                  text="Undo", action=self._handle_undo_click)
+        self.buttons.append(self.undo_button)
         
         exit_button_y = HEIGHT - button_height - 30 
         about_button_y = exit_button_y - button_height - spacing
@@ -155,7 +172,9 @@ class Board:
                                   text="Exit Game", action=self._handle_exit_click)
         self.buttons.append(self.exit_button) 
 
+        self._update_player_color_button_state() 
         self._update_ai_difficulty_button_state()
+        self._update_undo_button_state() 
 
         confirm_btn_y = BOARD_HEIGHT // 2 + 20 
         self.confirm_yes_button = Button(BOARD_WIDTH // 2 - 110, confirm_btn_y, 100, 40, "Yes",
@@ -167,13 +186,18 @@ class Board:
         
         self.overlay_close_button = Button(0, 0, 100, 30, "Close", action=self._close_text_overlay)
         
-        # Setup promotion buttons (initially without specific rects, will be set when drawn)
         self.promotion_buttons = [
             Button(0,0, PROMOTION_BUTTON_WIDTH, PROMOTION_BUTTON_HEIGHT, "Queen", action=lambda: self._handle_promotion_choice(chess.QUEEN)),
             Button(0,0, PROMOTION_BUTTON_WIDTH, PROMOTION_BUTTON_HEIGHT, "Rook", action=lambda: self._handle_promotion_choice(chess.ROOK)),
             Button(0,0, PROMOTION_BUTTON_WIDTH, PROMOTION_BUTTON_HEIGHT, "Bishop", action=lambda: self._handle_promotion_choice(chess.BISHOP)),
             Button(0,0, PROMOTION_BUTTON_WIDTH, PROMOTION_BUTTON_HEIGHT, "Knight", action=lambda: self._handle_promotion_choice(chess.KNIGHT)),
         ]
+
+        self.ai_confirm_start_button = Button(
+            BOARD_WIDTH // 2 - 75, BOARD_HEIGHT // 2 + 60, 150, 50, "Start Game",
+            color=BUTTON_PLAY_COLOR, hover_color=BUTTON_PLAY_HOVER_COLOR,
+            action=self._handle_ai_confirm_start_click
+        )
 
     def _load_text_file_content(self, filename):
         title = "Error"
@@ -243,8 +267,29 @@ class Board:
 
         self.game_mode_button.update_text(f"Mode: {self.game_mode}")
         self._update_ai_difficulty_button_state()
+        self._update_player_color_button_state() 
         self.restart_game() 
         print(f"Game mode changed to: {self.game_mode}")
+
+    def _toggle_player_color(self):
+        if self.game_mode == MODE_PVA: 
+            play_sound('button_click')
+            self.player_is_white = not self.player_is_white
+            player_color_text = "Play as: White" if self.player_is_white else "Play as: Black"
+            self.player_color_button.update_text(player_color_text)
+            self.restart_game() 
+            print(f"Player will now play as {'White' if self.player_is_white else 'Black'}")
+
+    def _update_player_color_button_state(self):
+        if hasattr(self, 'player_color_button'): 
+            if self.game_mode == MODE_PVA:
+                self.player_color_button.set_enabled(True)
+                player_color_text = "Play as: White" if self.player_is_white else "Play as: Black"
+                self.player_color_button.update_text(player_color_text)
+            else:
+                self.player_color_button.set_enabled(False)
+                self.player_color_button.update_text("Play as (PvA)")
+
 
     def _cycle_ai_difficulty(self):
         if self.game_mode == MODE_PVA:
@@ -261,7 +306,6 @@ class Board:
                 except Exception as e:
                     print(f"Error configuring Stockfish skill level: {e}")
             print(f"AI difficulty changed to: {self.current_ai_difficulty}")
-
 
     def _update_ai_difficulty_button_state(self):
         if self.game_mode == MODE_PVA:
@@ -285,6 +329,80 @@ class Board:
     def _cancel_restart_confirmation(self):
         play_sound('button_click') 
         self.show_restart_confirmation = False
+    
+    def _handle_ai_confirm_start_click(self):
+        play_sound('button_click')
+        self.active_overlay_type = OVERLAY_NONE 
+        self.ai_is_thinking = True
+        self._update_status_message() 
+        pygame.time.set_timer(AI_MOVE_EVENT, 100) 
+        print("AI first move confirmed by player.")
+
+    # --- ADDED UNDO LOGIC ---
+    def _handle_undo_click(self):
+        """Handles the undo move button click."""
+        if self.is_animating or self.ai_is_thinking or self.is_awaiting_promotion or self.game_over:
+            print("Cannot undo at this time.")
+            return
+
+        if self.chess_board.move_stack:
+            play_sound('button_click') 
+            
+            moves_to_undo = 1
+            if self.game_mode == MODE_PVA:
+                ai_color = chess.BLACK if self.player_is_white else chess.WHITE
+                human_player_color = chess.WHITE if self.player_is_white else chess.BLACK
+                
+                # If it's human's turn now, it means AI made the last move.
+                # We want to undo both AI's move and player's preceding move.
+                if self.chess_board.turn == human_player_color and len(self.chess_board.move_stack) >= 2:
+                     moves_to_undo = 2
+                # If it's AI's turn now, it means human made the last move. Undo 1.
+                # (This is covered by moves_to_undo = 1 default)
+            
+            print(f"Attempting to undo {moves_to_undo} half-move(s).")
+            for _ in range(moves_to_undo):
+                if self.chess_board.move_stack:
+                    self.chess_board.pop()
+                else:
+                    break 
+
+            self._sync_visual_board()
+            self.selected_square_coords = None
+            self.valid_moves_coords = []
+            self.king_in_check_coords = None
+            self.game_over = False 
+            self.game_over_message = ""
+            self.ai_is_thinking = False 
+            pygame.time.set_timer(AI_MOVE_EVENT, 0) 
+            self._update_status_message() 
+            self._check_game_over() # Re-check game over state (unlikely to be over after undo)
+            self._update_undo_button_state() 
+            print("Move(s) undone.")
+
+            # If after undo, it's AI's turn, trigger AI move
+            ai_color_after_undo = chess.BLACK if self.player_is_white else chess.WHITE
+            if self.game_mode == MODE_PVA and self.chess_board.turn == ai_color_after_undo and \
+               not self.is_animating and not self.game_over:
+                self.ai_is_thinking = True
+                self._update_status_message()
+                pygame.time.set_timer(AI_MOVE_EVENT, 500)
+        else:
+            print("No moves to undo.")
+
+    def _update_undo_button_state(self):
+        """Enables or disables the undo button."""
+        if hasattr(self, 'undo_button'): 
+            can_undo = bool(self.chess_board.move_stack) and \
+                       not self.is_animating and \
+                       not self.ai_is_thinking and \
+                       not self.is_awaiting_promotion and \
+                       not self.game_over and \
+                       self.active_overlay_type == OVERLAY_NONE and \
+                       not self.show_restart_confirmation
+            self.undo_button.set_enabled(can_undo)
+    # --- END OF ADDED UNDO LOGIC ---
+
 
     def restart_game(self):
         self.chess_board.reset()
@@ -299,15 +417,18 @@ class Board:
         self.animating_piece_surface = None
         self.king_in_check_coords = None 
         self.ai_is_thinking = False 
-        self.is_awaiting_promotion = False # Reset promotion state
+        self.is_awaiting_promotion = False
         pygame.time.set_timer(AI_MOVE_EVENT, 0) 
         self._update_status_message()
+        self._update_undo_button_state() 
         print("Game restarted.")
-        if self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK and not self.is_animating and not self.game_over:
-            self.ai_is_thinking = True
-            self._update_status_message()
-            pygame.time.set_timer(AI_MOVE_EVENT, 500) 
 
+        ai_color_to_move_first = chess.WHITE 
+        if self.game_mode == MODE_PVA and not self.player_is_white and self.chess_board.turn == ai_color_to_move_first:
+            if not self.is_animating and not self.game_over:
+                self.active_overlay_type = OVERLAY_AI_CONFIRM 
+                self._update_status_message() 
+        
     def _sync_visual_board(self):
         for r in range(ROWS):
             for c in range(COLS):
@@ -332,21 +453,25 @@ class Board:
 
 
     def handle_click_on_board_or_dialog(self, pos):
-        if self.is_animating or (self.game_mode == MODE_PVA and self.ai_is_thinking): 
+        if self.is_animating or (self.game_mode == MODE_PVA and self.ai_is_thinking and not self.active_overlay_type == OVERLAY_AI_CONFIRM): 
             return False 
 
-        # Handle promotion choice click first if active
+        if self.active_overlay_type == OVERLAY_AI_CONFIRM:
+            if self.ai_confirm_start_button and self.ai_confirm_start_button.rect.collidepoint(pos):
+                if self.ai_confirm_start_button.action:
+                    self.ai_confirm_start_button.action()
+                return True 
+            return True 
+
         if self.is_awaiting_promotion:
             for i, promo_button in enumerate(self.promotion_buttons):
-                # The promotion_buttons rects are in screen coordinates, set during their drawing
-                if promo_button.rect.collidepoint(pos):
+                btn_rect_to_check = promo_button.screen_rect if hasattr(promo_button, 'screen_rect') else promo_button.rect
+                if btn_rect_to_check.collidepoint(pos):
                     chosen_piece_type = [chess.QUEEN, chess.ROOK, chess.BISHOP, chess.KNIGHT][i]
                     self._handle_promotion_choice(chosen_piece_type)
-                    return True # Click handled by promotion choice
-            # If click is on promotion overlay but not a button, consume it
-            # (Assuming overlay covers board)
-            if pygame.Rect(0,0,BOARD_WIDTH, BOARD_HEIGHT).collidepoint(pos): # Crude check
-                return True
+                    return True 
+            if pygame.Rect(0,0,BOARD_WIDTH, BOARD_HEIGHT).collidepoint(pos):
+                 return True
 
 
         if self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT]:
@@ -373,18 +498,22 @@ class Board:
         return False 
 
     def select_square(self, row, col):
-        if self.game_over or self.is_animating or self.ai_is_thinking or self.is_awaiting_promotion: return
-        if self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK: 
-            return
+        if self.game_over or self.is_animating or self.ai_is_thinking or self.is_awaiting_promotion or self.active_overlay_type != OVERLAY_NONE: return
+        
+        human_player_chess_color = chess.WHITE if self.player_is_white else chess.BLACK
+        if self.game_mode == MODE_PVA and self.chess_board.turn != human_player_chess_color:
+            return 
 
         clicked_chess_sq = self._coords_to_chess_sq(row, col)
         piece_at_clicked_sq = self.chess_board.piece_at(clicked_chess_sq)
-        current_player_color = chess.WHITE if self.chess_board.turn else chess.BLACK
+        current_player_color_on_board = self.chess_board.turn 
         
         previously_selected = self.selected_square_coords is not None
 
         if self.selected_square_coords is None: 
-            if piece_at_clicked_sq and piece_at_clicked_sq.color == current_player_color:
+            if piece_at_clicked_sq and piece_at_clicked_sq.color == current_player_color_on_board:
+                if self.game_mode == MODE_PVA and piece_at_clicked_sq.color != human_player_chess_color:
+                    return
                 self.selected_square_coords = (row, col)
                 self._calculate_valid_moves(row, col)
                 play_sound('piece_select')
@@ -392,7 +521,9 @@ class Board:
             from_r, from_c = self.selected_square_coords
             if (row, col) in self.valid_moves_coords: 
                 self.move_piece((from_r, from_c), (row, col)) 
-            elif piece_at_clicked_sq and piece_at_clicked_sq.color == current_player_color: 
+            elif piece_at_clicked_sq and piece_at_clicked_sq.color == current_player_color_on_board: 
+                if self.game_mode == MODE_PVA and piece_at_clicked_sq.color != human_player_chess_color:
+                    return 
                 if (row, col) == self.selected_square_coords: 
                     self.selected_square_coords = None
                     self.valid_moves_coords = []
@@ -416,7 +547,7 @@ class Board:
                 to_coords = self._chess_sq_to_coords(move.to_square)
                 if to_coords: self.valid_moves_coords.append(to_coords)
 
-    def move_piece(self, from_coords, to_coords, is_ai_move=False, promotion_piece_type=None): 
+    def move_piece(self, from_coords, to_coords, is_ai_move=False): 
         if self.game_over or self.is_animating: return
 
         from_r, from_c = from_coords
@@ -427,96 +558,86 @@ class Board:
         piece_to_move = self.chess_board.piece_at(from_sq_chess)
         if not piece_to_move: return 
 
-        # Check for player pawn promotion opportunity
-        is_player_promotion = False
-        if not is_ai_move and piece_to_move.piece_type == chess.PAWN:
+        is_player_promotion_opportunity = False
+        is_human_turn_for_promo = (self.game_mode == MODE_PVP and piece_to_move.color == self.chess_board.turn) or \
+                                  (self.game_mode == MODE_PVA and piece_to_move.color == (chess.WHITE if self.player_is_white else chess.BLACK))
+
+        if not is_ai_move and is_human_turn_for_promo and piece_to_move.piece_type == chess.PAWN:
             if (piece_to_move.color == chess.WHITE and to_r == 0) or \
                (piece_to_move.color == chess.BLACK and to_r == 7):
-                is_player_promotion = True
+                is_player_promotion_opportunity = True
         
-        if is_player_promotion and promotion_piece_type is None: # Player needs to choose
+        if is_player_promotion_opportunity:
             self.is_awaiting_promotion = True
-            self.promotion_square_coords = to_coords
-            self.promotion_pending_base_move_uci = chess.Move(from_sq_chess, to_sq_chess).uci()
+            self.promotion_square_coords = to_coords 
+            self.promotion_pending_base_move_uci = chess.Move(from_sq_chess, to_sq_chess).uci()[:4] 
             self.promoting_pawn_color_is_white = (piece_to_move.color == chess.WHITE)
             
-            # Start animation of pawn moving to the last rank
             self.is_animating = True
             self.animating_piece_surface = get_piece_image(self.visual_board[from_r][from_c])
             self.anim_start_pixel_pos = (from_c * SQUARE_SIZE + SQUARE_SIZE // 2, from_r * SQUARE_SIZE + SQUARE_SIZE // 2)
             self.anim_end_pixel_pos = (to_c * SQUARE_SIZE + SQUARE_SIZE // 2, to_r * SQUARE_SIZE + SQUARE_SIZE // 2)
             self.anim_current_pixel_pos = list(self.anim_start_pixel_pos)
             self.anim_original_start_coords = (from_r, from_c)
-            # self.pending_move will be set after promotion choice for player
+            self.anim_target_coords = to_coords 
             play_sound('piece_move')
             self.selected_square_coords = None 
             self.valid_moves_coords = []
-            return # Wait for promotion choice
+            return 
 
-        # If it's an AI move or player move with promotion already chosen, or not a promotion
-        final_promotion_piece = promotion_piece_type
-        if is_ai_move and piece_to_move.piece_type == chess.PAWN: # AI promotion
-             if (piece_to_move.color == chess.WHITE and to_r == 0) or \
-                (piece_to_move.color == chess.BLACK and to_r == 7):
-                 # AI move should already contain promotion if applicable.
-                 # If not, default to Queen (though Stockfish usually specifies)
-                 move_obj_for_promo_check = chess.Move(from_sq_chess, to_sq_chess)
-                 potential_promo_move = chess.Move(from_sq_chess, to_sq_chess, promotion=chess.QUEEN)
-                 if potential_promo_move in self.chess_board.legal_moves: # Check if queen promo is legal
-                    final_promotion_piece = chess.QUEEN 
-                 # This part needs to correctly use the AI's chosen promotion if available.
-                 # For now, assuming if AI move reaches here, its 'move' object in _trigger_ai_move had the promo.
-                 # The 'promo' variable in the original move_piece was for this.
-                 # Let's assume the 'move' object passed to _update_animation for AI has promotion.
+        if is_ai_move and hasattr(self, 'pending_move_for_ai') and self.pending_move_for_ai:
+            move_to_push = self.pending_move_for_ai
+            del self.pending_move_for_ai 
+        else: 
+            promo_piece_for_move = None
+            if piece_to_move.piece_type == chess.PAWN:
+                if (piece_to_move.color == chess.WHITE and to_r == 0) or \
+                   (piece_to_move.color == chess.BLACK and to_r == 7):
+                    promo_piece_for_move = chess.QUEEN 
+            move_to_push = chess.Move(from_sq_chess, to_sq_chess, promotion=promo_piece_for_move)
 
-        move_to_push = chess.Move.from_uci(self.promotion_pending_base_move_uci + chess.piece_symbol(final_promotion_piece).lower()) if self.is_awaiting_promotion and promotion_piece_type else chess.Move(from_sq_chess, to_sq_chess, promotion=final_promotion_piece)
-
-
-        # This part is for non-promotion moves or AI moves where promotion is already part of the 'move'
-        if not self.is_awaiting_promotion: # Or if promotion_piece_type is now set
-            self.is_animating = True
-            self.animating_piece_surface = get_piece_image(self.visual_board[from_r][from_c])
-            self.anim_start_pixel_pos = (from_c * SQUARE_SIZE + SQUARE_SIZE // 2, from_r * SQUARE_SIZE + SQUARE_SIZE // 2)
-            self.anim_end_pixel_pos = (to_c * SQUARE_SIZE + SQUARE_SIZE // 2, to_r * SQUARE_SIZE + SQUARE_SIZE // 2)
-            self.anim_current_pixel_pos = list(self.anim_start_pixel_pos)
-            self.anim_original_start_coords = (from_r, from_c)
-            self.pending_move = move_to_push
-            play_sound('piece_move')
+        self.is_animating = True
+        self.animating_piece_surface = get_piece_image(self.visual_board[from_r][from_c])
+        self.anim_start_pixel_pos = (from_c * SQUARE_SIZE + SQUARE_SIZE // 2, from_r * SQUARE_SIZE + SQUARE_SIZE // 2)
+        self.anim_end_pixel_pos = (to_c * SQUARE_SIZE + SQUARE_SIZE // 2, to_r * SQUARE_SIZE + SQUARE_SIZE // 2)
+        self.anim_current_pixel_pos = list(self.anim_start_pixel_pos)
+        self.anim_original_start_coords = (from_r, from_c)
+        self.anim_target_coords = to_coords
+        self.pending_move = move_to_push 
+        play_sound('piece_move')
         
         self.selected_square_coords = None 
         self.valid_moves_coords = []
-
     def _handle_promotion_choice(self, chosen_piece_type):
         play_sound('button_click')
         if not self.is_awaiting_promotion or self.promotion_pending_base_move_uci is None:
+            self.is_awaiting_promotion = False 
             return
 
-        # Base move uci (e.g., "e7e8") + promotion piece symbol (e.g., "q")
         promotion_uci = self.promotion_pending_base_move_uci + chess.piece_symbol(chosen_piece_type).lower()
         promoted_move = chess.Move.from_uci(promotion_uci)
 
         if promoted_move in self.chess_board.legal_moves:
             self.chess_board.push(promoted_move)
-            self._sync_visual_board() # Update visual board immediately after promotion
+            self._sync_visual_board() 
             self._update_status_message()
             self._check_game_over()
+            self._update_undo_button_state() 
         else:
             print(f"Error: Chosen promotion move {promoted_move.uci()} is not legal.")
-            # Revert or handle error - for now, just log and reset promotion state
+            self._sync_visual_board() 
         
         self.is_awaiting_promotion = False
         self.promotion_pending_base_move_uci = None
         self.promotion_square_coords = None
         
-        # If AI's turn next, trigger it
-        if not self.game_over and self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK:
+        ai_color = chess.BLACK if self.player_is_white else chess.WHITE
+        if not self.game_over and self.game_mode == MODE_PVA and self.chess_board.turn == ai_color:
             self.ai_is_thinking = True
             self._update_status_message()
             pygame.time.set_timer(AI_MOVE_EVENT, 500)
 
-
     def _trigger_ai_move(self):
-        # ... (same as chess_board_v16_ai_bug_fixes) ...
         if self.game_mode != MODE_PVA:
             self.ai_is_thinking = False 
             self._update_status_message() 
@@ -527,10 +648,8 @@ class Board:
             self._update_status_message() 
             return
         
-        if self.chess_board.turn == chess.BLACK: 
-            self.ai_is_thinking = True # Set before updating status
-            self._update_status_message() 
-
+        ai_color = chess.BLACK if self.player_is_white else chess.WHITE
+        if self.chess_board.turn == ai_color: 
             print(f"AI ({self.current_ai_difficulty}) is actually processing move...")
             
             skill = STOCKFISH_SKILL_LEVELS.get(self.current_ai_difficulty, STOCKFISH_SKILL_LEVELS["Medium"]) 
@@ -549,32 +668,15 @@ class Board:
 
             try:
                 result = self.stockfish_engine.play(self.chess_board, chess.engine.Limit(time=think_time))
-                ai_chess_move = result.move # This move object from stockfish will include promotion if any
+                ai_chess_move = result.move 
                 
-                # AI is done thinking, but its piece animation hasn't started yet.
-                # self.ai_is_thinking = False # This will be set to False after AI's animation completes.
-                                            # The status message will reflect "AI's Turn" during its animation.
-
                 if ai_chess_move:
                     print(f"AI plays: {ai_chess_move.uci()}")
                     from_coords = self._chess_sq_to_coords(ai_chess_move.from_square)
                     to_coords = self._chess_sq_to_coords(ai_chess_move.to_square)
                     
-                    # The AI's move object (ai_chess_move) already contains the promotion piece if applicable.
-                    # We need to pass this to our move_piece method.
-                    # For now, move_piece's internal promotion logic will handle it for AI.
-                    # A cleaner way would be to extract the promotion from ai_chess_move.promotion
-                    # and pass it to move_piece.
-                    
-                    # Let's refine how move_piece gets the promotion for AI
-                    # For now, we assume move_piece will correctly deduce AI promotion if needed,
-                    # or that ai_chess_move.promotion will be used by a refined move_piece.
-                    # The current move_piece will default to Queen if it detects a pawn reaching end.
-                    # This is okay for now as Stockfish usually promotes to Queen.
-
                     if from_coords and to_coords:
-                        # We need to ensure the pending_move for AI includes its chosen promotion
-                        self.pending_move_for_ai = ai_chess_move # Store the full move
+                        self.pending_move_for_ai = ai_chess_move 
                         self.move_piece(from_coords, to_coords, is_ai_move=True) 
                 else: 
                     print("AI returned no move (unexpected).")
@@ -592,7 +694,6 @@ class Board:
         else: 
             self.ai_is_thinking = False
 
-
     def _update_animation(self):
         if not self.is_animating:
             return
@@ -607,71 +708,71 @@ class Board:
             self.anim_current_pixel_pos = list(self.anim_end_pixel_pos) 
             self.is_animating = False 
 
-            # If animation was for a pawn reaching promotion rank (player's move)
-            if self.is_awaiting_promotion:
-                # Don't push to board yet, wait for player's choice.
-                # The promotion overlay will be drawn.
-                self.animating_piece_surface = None # Clear animation surface
+            if self.is_awaiting_promotion: 
+                self._sync_visual_board() 
+                self.animating_piece_surface = None 
                 self.anim_original_start_coords = None
-                 # visual_board was already cleared at from_coords, 
-                 # and to_coords still has the pawn for now until choice.
-                 # We need to ensure the pawn is visually at the promotion square.
-                self._sync_visual_board() # Sync to show pawn at final square before choice
-                self._update_status_message() # Update status
-                return # Stop here, wait for promotion choice click
+                self._update_status_message() 
+                self._update_undo_button_state() 
+                return 
 
-            # For regular moves or AI moves (where promotion is part of pending_move)
             if hasattr(self, 'pending_move') and self.pending_move:
-                current_pending_move = self.pending_move
-                if hasattr(self, 'pending_move_for_ai') and self.pending_move_for_ai: # Prioritize AI's full move
-                    current_pending_move = self.pending_move_for_ai
-                    del self.pending_move_for_ai
-
-                if current_pending_move in self.chess_board.legal_moves or self.chess_board.is_capture(current_pending_move): 
-                    self.chess_board.push(current_pending_move)
+                move_to_execute = self.pending_move
+                
+                if move_to_execute in self.chess_board.legal_moves or self.chess_board.is_capture(move_to_execute): 
+                    self.chess_board.push(move_to_execute)
                 else: 
-                    print(f"Warning: Pending move {current_pending_move.uci()} was not pushed. Current legal moves: {list(self.chess_board.legal_moves)}")
-                self.pending_move = None 
+                    print(f"Warning: Pending move {move_to_execute.uci()} was not pushed. Current legal moves: {list(self.chess_board.legal_moves)}")
+                self.pending_move = None
             
             self._sync_visual_board() 
             self.animating_piece_surface = None
             self.anim_original_start_coords = None
             self.anim_target_coords = None
             
-            if self.game_mode == MODE_PVA and self.chess_board.turn == chess.WHITE: # If AI (Black) just moved
-                self.ai_is_thinking = False # AI is done
+            ai_color = chess.BLACK if self.player_is_white else chess.WHITE
+            if self.game_mode == MODE_PVA and self.chess_board.turn != ai_color : 
+                self.ai_is_thinking = False
 
             self._update_status_message() 
             self._check_game_over()     
+            self._update_undo_button_state() 
 
-            if not self.game_over and self.game_mode == MODE_PVA and self.chess_board.turn == chess.BLACK:
+            if not self.game_over and self.game_mode == MODE_PVA and self.chess_board.turn == ai_color:
                 self.ai_is_thinking = True 
                 self._update_status_message() 
                 pygame.time.set_timer(AI_MOVE_EVENT, 500) 
         else: 
             self.anim_current_pixel_pos[0] += (dx / distance) * ANIMATION_SPEED
             self.anim_current_pixel_pos[1] += (dy / distance) * ANIMATION_SPEED
-
     def _update_status_message(self):
-        # ... (same as chess_board_v16_ai_bug_fixes) ...
         self.king_in_check_coords = None 
         if self.game_over: 
             self.status_message = "" 
             return
         
+        current_turn_color = self.chess_board.turn 
         player_turn_text = ""
-        if self.game_mode == MODE_PVP:
-            player_turn_text = "White's Turn" if self.chess_board.turn == chess.WHITE else "Black's Turn"
+
+        if self.is_awaiting_promotion:
+            player_turn_text = "Choose promotion:"
+        elif self.active_overlay_type == OVERLAY_AI_CONFIRM: 
+            player_turn_text = "AI Prepares..." 
+        elif self.game_mode == MODE_PVP:
+            player_turn_text = "White's Turn" if current_turn_color == chess.WHITE else "Black's Turn"
         elif self.game_mode == MODE_PVA:
-            if self.chess_board.turn == chess.BLACK and self.ai_is_thinking: 
+            human_player_chess_color = chess.WHITE if self.player_is_white else chess.BLACK
+            ai_color = chess.BLACK if self.player_is_white else chess.WHITE
+
+            if current_turn_color == ai_color and self.ai_is_thinking: 
                  player_turn_text = f"AI ({self.current_ai_difficulty}) is thinking..."
-            elif self.chess_board.turn == chess.BLACK and not self.is_animating: 
+            elif current_turn_color == ai_color and not self.is_animating: 
                  player_turn_text = f"AI's Turn ({self.current_ai_difficulty})"
-            else: 
-                player_turn_text = "Your Turn (White)"
+            elif current_turn_color == human_player_chess_color:
+                player_turn_text = "Your Turn"
         
         self.status_message = player_turn_text
-        if self.chess_board.is_check():
+        if self.chess_board.is_check() and not self.is_awaiting_promotion and self.active_overlay_type != OVERLAY_AI_CONFIRM :
             if self.status_message:
                 self.status_message += " - CHECK!"
             else: 
@@ -683,7 +784,6 @@ class Board:
             if king_square is not None:
                 self.king_in_check_coords = self._chess_sq_to_coords(king_square)
     def _check_game_over(self):
-        # ... (same as chess_board_v16_ai_bug_fixes) ...
         if self.game_over: return 
 
         outcome = self.chess_board.outcome()
@@ -692,27 +792,27 @@ class Board:
             self.ai_is_thinking = False 
             self.king_in_check_coords = None 
             if outcome.termination == chess.Termination.CHECKMATE:
-                winner_color = "White" if outcome.winner == chess.WHITE else "Black"
+                actual_winner_color = outcome.winner 
                 if self.game_mode == MODE_PVA:
-                    winner_display = "You Win!" if outcome.winner == chess.WHITE else "AI Wins!"
-                    self.game_over_message = f"CHECKMATE! {winner_display}"
-                else:
-                    self.game_over_message = f"CHECKMATE! {winner_color} wins."
+                    human_player_chess_color = chess.WHITE if self.player_is_white else chess.BLACK
+                    if actual_winner_color == human_player_chess_color:
+                        self.game_over_message = "CHECKMATE! You Win!"
+                    else:
+                        self.game_over_message = "CHECKMATE! AI Wins!"
+                else: 
+                    winner_display = "White" if actual_winner_color == chess.WHITE else "Black"
+                    self.game_over_message = f"CHECKMATE! {winner_display} wins."
+
             elif outcome.termination == chess.Termination.STALEMATE:
                 self.game_over_message = "STALEMATE! Draw."
             elif outcome.termination == chess.Termination.INSUFFICIENT_MATERIAL:
                 self.game_over_message = "DRAW! Insufficient Material."
-            elif outcome.termination == chess.Termination.SEVENTYFIVE_MOVES:
-                self.game_over_message = "DRAW! 75-move rule."
-            elif outcome.termination == chess.Termination.FIVEFOLD_REPETITION:
-                self.game_over_message = "DRAW! Fivefold repetition."
             else: 
                 self.game_over_message = "GAME OVER! Draw."
             self.status_message = "" 
-
+            self._update_undo_button_state() 
     # --- Drawing Methods ---
     def draw_board_area(self, screen):
-        # ... (same as chess_board_v16_ai_bug_fixes, includes check highlight) ...
         for r_idx in range(ROWS):
             for c_idx in range(COLS):
                 color = LIGHT_SQUARE if (r_idx + c_idx) % 2 == 0 else DARK_SQUARE
@@ -726,6 +826,8 @@ class Board:
 
         for r_idx in range(ROWS):
             for c_idx in range(COLS):
+                if self.is_awaiting_promotion and self.promotion_square_coords == (r_idx, c_idx):
+                    continue
                 if self.is_animating and self.anim_original_start_coords == (r_idx, c_idx):
                     continue 
 
@@ -737,19 +839,18 @@ class Board:
                                                           r_idx * SQUARE_SIZE + SQUARE_SIZE // 2))
                         screen.blit(image, img_rect.topleft)
         
-        if not self.is_animating and not (self.game_mode == MODE_PVA and self.ai_is_thinking) and not self.is_awaiting_promotion: 
+        if not self.is_animating and not (self.game_mode == MODE_PVA and self.ai_is_thinking) and not self.is_awaiting_promotion and self.active_overlay_type == OVERLAY_NONE: 
             if self.selected_square_coords:
                 r, c = self.selected_square_coords
                 highlight_surface = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
-                highlight_surface.fill(HIGHLIGHT_COLOR)
+                highlight_surface.fill(SELECTED_SQUARE_HIGHLIGHT_COLOR) 
                 screen.blit(highlight_surface, (c * SQUARE_SIZE, r * SQUARE_SIZE))
 
             for r_idx, c_idx in self.valid_moves_coords:
                 center_x = c_idx * SQUARE_SIZE + SQUARE_SIZE // 2
                 center_y = r_idx * SQUARE_SIZE + SQUARE_SIZE // 2
-                pygame.draw.circle(screen, GREEN, (center_x, center_y), SQUARE_SIZE // 6)
+                pygame.draw.circle(screen, VALID_MOVE_DOT_COLOR, (center_x, center_y), SQUARE_SIZE // 6) 
     def draw_animated_piece(self, screen):
-        # ... (same) ...
         if self.is_animating and self.animating_piece_surface and self.anim_current_pixel_pos:
             piece_width, piece_height = self.animating_piece_surface.get_size()
             draw_x = self.anim_current_pixel_pos[0] - piece_width // 2
@@ -757,7 +858,6 @@ class Board:
             screen.blit(self.animating_piece_surface, (draw_x, draw_y))
 
     def draw_side_panel(self, screen):
-        # ... (same) ...
         panel_rect = pygame.Rect(BOARD_WIDTH, 0, SIDE_PANEL_WIDTH, HEIGHT)
         pygame.draw.rect(screen, SIDE_PANEL_BG_COLOR, panel_rect)
 
@@ -770,7 +870,6 @@ class Board:
         for button in self.buttons:
             button.draw(screen)
     def draw_game_over_display(self, screen):
-        # ... (same) ...
         if self.game_over and self.game_over_message:
             overlay_rect = pygame.Rect(0, 0, BOARD_WIDTH, BOARD_HEIGHT)
             overlay_surface = pygame.Surface((overlay_rect.width, overlay_rect.height), pygame.SRCALPHA)
@@ -781,7 +880,6 @@ class Board:
             screen.blit(overlay_surface, overlay_rect.topleft)
 
     def draw_restart_confirmation_dialog(self, screen):
-        # ... (same) ...
         if self.show_restart_confirmation:
             overlay_rect = pygame.Rect(0, 0, BOARD_WIDTH, BOARD_HEIGHT)
             overlay_surface = pygame.Surface((overlay_rect.width, overlay_rect.height), pygame.SRCALPHA)
@@ -808,8 +906,8 @@ class Board:
             
             screen.blit(overlay_surface, overlay_rect.topleft)
 
+
     def _draw_text_overlay(self, screen):
-        # ... (same) ...
         if self.active_overlay_type not in [OVERLAY_RULES, OVERLAY_ABOUT]:
             return
 
@@ -866,11 +964,10 @@ class Board:
         screen.blit(overlay_surface, overlay_rect_on_screen.topleft)
 
     def _draw_promotion_choice_overlay(self, screen):
-        """Draws the pawn promotion choice buttons."""
         if not self.is_awaiting_promotion:
             return
 
-        overlay_rect = pygame.Rect(0, 0, BOARD_WIDTH, BOARD_HEIGHT) # Covers the board
+        overlay_rect = pygame.Rect(0, 0, BOARD_WIDTH, BOARD_HEIGHT) 
         overlay_surface = pygame.Surface((overlay_rect.width, overlay_rect.height), pygame.SRCALPHA)
         overlay_surface.fill(PROMOTION_OVERLAY_BG_COLOR)
 
@@ -879,23 +976,54 @@ class Board:
         prompt_rect = prompt_surface.get_rect(centerx=overlay_rect.width // 2, y=overlay_rect.height // 2 - 100)
         overlay_surface.blit(prompt_surface, prompt_rect)
 
-        # Position promotion buttons
-        # For simplicity, let's arrange them horizontally
         button_start_x = overlay_rect.width // 2 - (len(self.promotion_buttons) * (PROMOTION_BUTTON_WIDTH + 10) - 10) // 2
         button_y = overlay_rect.height // 2 - PROMOTION_BUTTON_HEIGHT // 2
 
         for i, button in enumerate(self.promotion_buttons):
             button.rect.x = button_start_x + i * (PROMOTION_BUTTON_WIDTH + 10)
             button.rect.y = button_y
-            button.rect.width = PROMOTION_BUTTON_WIDTH # Ensure size is set
+            button.rect.width = PROMOTION_BUTTON_WIDTH 
             button.rect.height = PROMOTION_BUTTON_HEIGHT
             
-            # Update screen_rect for click detection
             button.screen_rect = pygame.Rect(button.rect.x, button.rect.y, button.rect.width, button.rect.height)
+            
+            button.draw(overlay_surface) 
 
-            # Draw piece image on button if desired, or just text
-            # For now, using text from button setup
-            button.draw(overlay_surface) # Draw on the local overlay surface
+        screen.blit(overlay_surface, overlay_rect.topleft)
+
+    def _draw_ai_first_move_confirmation_overlay(self, screen):
+        if self.active_overlay_type != OVERLAY_AI_CONFIRM:
+            return
+
+        overlay_rect = pygame.Rect(0, 0, BOARD_WIDTH, BOARD_HEIGHT)
+        overlay_surface = pygame.Surface((overlay_rect.width, overlay_rect.height), pygame.SRCALPHA)
+        overlay_surface.fill(AI_CONFIRM_OVERLAY_BG_COLOR)
+
+        line1_text = "AI will play as White."
+        line2_text = f"Difficulty: {self.current_ai_difficulty}"
+        line3_text = "Ready to start?"
+
+        line1_surf = self.overlay_title_font.render(line1_text, True, OVERLAY_TEXT_COLOR)
+        line2_surf = self.overlay_body_font.render(line2_text, True, OVERLAY_TEXT_COLOR)
+        line3_surf = self.overlay_body_font.render(line3_text, True, OVERLAY_TEXT_COLOR)
+
+        line1_rect = line1_surf.get_rect(centerx=overlay_rect.width // 2, y=overlay_rect.height // 2 - 80)
+        line2_rect = line2_surf.get_rect(centerx=overlay_rect.width // 2, top=line1_rect.bottom + 10)
+        line3_rect = line3_surf.get_rect(centerx=overlay_rect.width // 2, top=line2_rect.bottom + 20)
+
+        overlay_surface.blit(line1_surf, line1_rect)
+        overlay_surface.blit(line2_surf, line2_rect)
+        overlay_surface.blit(line3_surf, line3_rect)
+
+        self.ai_confirm_start_button.rect.centerx = overlay_rect.width // 2
+        self.ai_confirm_start_button.rect.bottom = overlay_rect.height - 50 
+        self.ai_confirm_start_button.screen_rect = pygame.Rect(
+            self.ai_confirm_start_button.rect.x, 
+            self.ai_confirm_start_button.rect.y, 
+            self.ai_confirm_start_button.rect.width, 
+            self.ai_confirm_start_button.rect.height
+        )
+        self.ai_confirm_start_button.draw(overlay_surface)
 
         screen.blit(overlay_surface, overlay_rect.topleft)
 
@@ -903,8 +1031,9 @@ class Board:
     def update(self):
         if not self.game_over : 
             self._update_animation()
-            # Status message is updated strategically, not every frame here.
-            # If AI is thinking, it's set. If player's turn, it's set after move.
+            if self.game_mode == MODE_PVA and self.ai_is_thinking and self.active_overlay_type == OVERLAY_NONE:
+                self._update_status_message()
+
 
     def draw(self, screen):
         screen.fill(SIDE_PANEL_BG_COLOR) 
@@ -914,41 +1043,37 @@ class Board:
         
         self.draw_game_over_display(screen) 
         
-        if self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT]:
+        if self.active_overlay_type == OVERLAY_AI_CONFIRM: # Draw AI confirm on top of game over if both active
+            self._draw_ai_first_move_confirmation_overlay(screen)
+        elif self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT]:
             self._draw_text_overlay(screen)
         elif self.show_restart_confirmation: 
              self.draw_restart_confirmation_dialog(screen)
-        elif self.is_awaiting_promotion: # Draw promotion overlay if needed
+        elif self.is_awaiting_promotion: 
             self._draw_promotion_choice_overlay(screen)
 
 
     def handle_button_events(self, event):
-        # Handle hover for main side panel buttons
         if event.type == pygame.MOUSEMOTION:
             for button in self.buttons:
                 button.handle_event(event) 
-            
-            # Hover for overlay close button
             if self.active_overlay_type in [OVERLAY_RULES, OVERLAY_ABOUT] and self.overlay_close_button:
                 btn_rect = self.overlay_close_button.screen_rect if hasattr(self.overlay_close_button, 'screen_rect') else self.overlay_close_button.rect
                 self.overlay_close_button.is_hovered = btn_rect.collidepoint(event.pos)
-            
-            # Hover for restart confirmation buttons
             if self.show_restart_confirmation:
                 self.confirm_yes_button.is_hovered = self.confirm_yes_button.rect.collidepoint(event.pos)
                 self.confirm_no_button.is_hovered = self.confirm_no_button.rect.collidepoint(event.pos)
-
-            # Hover for promotion choice buttons
             if self.is_awaiting_promotion:
                 for promo_btn in self.promotion_buttons:
-                    # Promotion buttons rects are screen-relative when checked for collision
-                    promo_btn.is_hovered = promo_btn.rect.collidepoint(event.pos)
-            return False
+                    promo_btn_screen_rect = promo_btn.screen_rect if hasattr(promo_btn, 'screen_rect') else promo_btn.rect
+                    promo_btn.is_hovered = promo_btn_screen_rect.collidepoint(event.pos)
+            if self.active_overlay_type == OVERLAY_AI_CONFIRM and self.ai_confirm_start_button:
+                self.ai_confirm_start_button.is_hovered = self.ai_confirm_start_button.rect.collidepoint(event.pos)
+            return False 
         
-        # Handle clicks for main side panel buttons
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             for button in self.buttons:
-                if button.handle_event(event): # Button's handle_event calls action and returns True
+                if button.handle_event(event): 
                     return True 
         return False 
 

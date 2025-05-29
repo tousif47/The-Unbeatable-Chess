@@ -16,8 +16,8 @@ SQUARE_SIZE = BOARD_WIDTH // COLS
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-# GREEN = (0, 255, 0) # Old valid move color
-# RED = (255, 0, 0)   # Old check highlight (keeping for now, can change if desired)
+GREEN = (0, 255, 0) 
+RED = (255, 0, 0)   
 LIGHT_SQUARE = (240, 217, 181)
 DARK_SQUARE = (181, 136, 99)
 
@@ -59,7 +59,7 @@ STATUS_FONT_SIZE = 22
 BUTTON_FONT_SIZE = 20
 GAME_OVER_FONT_SIZE = 48
 CONFIRM_MSG_FONT_SIZE = 24
-OVERLAY_TITLE_FONT_SIZE = 30 # Slightly smaller for AI confirm title
+OVERLAY_TITLE_FONT_SIZE = 30 
 OVERLAY_BODY_FONT_SIZE = 18
 OVERLAY_LINE_SPACING = 5 
 PROMOTION_CHOICE_FONT_SIZE = 20
